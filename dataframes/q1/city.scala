@@ -25,21 +25,21 @@ object Q1 {
     }
 
     def doCity(input: DataFrame): DataFrame = {
-        // Filter out nulls for critical columns
+        // Filter out bad rows / nulls strictly for required processing columns
         val valid = input.filter(
             col("state").isNotNull && 
             col("county").isNotNull && 
             col("population").isNotNull
         )
 
-        // Count zips using registered UDF (small city: zipCounter(zips) <= 1)
-        val withSmallFlag = valid.withColumn(
+        // Identify small cities (1 or fewer zips) using registered UDF
+        val enriched = valid.withColumn(
             "is_small",
             expr("case when zipCounter(zips) <= 1 then 1 else 0 end")
         )
 
-        // Stage 1: Group by State and County (uniquely identifies county)
-        val countyAgg = withSmallFlag
+        // Aggregate by State and County first
+        val countyStats = enriched
             .groupBy("state", "county")
             .agg(
                 count("*").as("county_cities"),
@@ -48,8 +48,8 @@ object Q1 {
             )
             .withColumn("is_le_2_small", expr("case when small_cities <= 2 then 1 else 0 end"))
 
-        // Stage 2: Aggregate by State to calculate total stats and count of qualifying counties
-        countyAgg
+        // Aggregate by State to reach final output schema
+        countyStats
             .groupBy("state")
             .agg(
                 sum("county_cities").as("num_cities"),

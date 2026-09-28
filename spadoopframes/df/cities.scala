@@ -1,58 +1,65 @@
-import org.apache.spark.sql.{Dataset, DataFrame, SparkSession, Row}
-import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.expressions._
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types._
-import org.apache.spark.sql.functions.udf
 
-object Q3 {  
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
+import org.apache.spark.rdd.RDD
+import org.apache.spark.SparkContext._
 
-    def main(args: Array[String]) = {  // autograder will call this function
-        //remember, DataFrames only
-        val spark = getSparkSession()
-        import spark.implicits._
-        val mydf = getDF(spark)
-        val answer = doCity(mydf)
-        saveit(answer, "everything_q3")
+object Q2 {
 
+    def main(args: Array[String]) = {
+        val sc = getSC()
+        val myrdd = getRDD(sc)
+        val counts = doCity(myrdd)
+        saveit(counts, "everything_q2")
     }
 
-    def registerZipCounter(spark: SparkSession) = {
-        val zipCounter = udf({x: String => Option(x) match {
-                                 case Some(y) => (y.trim()+" ").split("\\s+").size;
-                                 case None => 0}
-                             })
-        spark.udf.register("zipCounter", zipCounter) // registers udf with the spark session
+    def getSC(): SparkContext = {
+        val conf = new SparkConf().setAppName("Q2Cities").setIfMissing("spark.master", "local[*]")
+        new SparkContext(conf)
     }
 
-    def doCity(input: DataFrame): DataFrame = {
+    def getRDD(sc: SparkContext): RDD[String] = {
+        sc.textFile("/datasets/cities")
     }
 
-    def getSparkSession(): SparkSession = {
-        // always use this to get the spark variable, even when using the shell
-        val spark = SparkSession.builder().getOrCreate()
-        registerZipCounter(spark) // tells the spark session about the UDF
-        spark
-    }
-
-    def getDF(spark: SparkSession): DataFrame = {
-        //no schema, no points
-    }
+    def doCity(input: RDD[String]): RDD[(Int, Int)] = {
     
-    def getTestDF(spark: SparkSession): DataFrame = {
-        import spark.implicits._ // do not delete this
+        input
+            .map(line => line.split("\t", -1))
+            .filter(fields => fields.length >= 5 && fields(0).trim.nonEmpty)
+            .map(fields => {
+                val zipField = fields(4).trim
+                // Empty zip field → 0 zips; otherwise count whitespace-separated tokens
+                val zipCount = if (zipField.isEmpty) 0 else zipField.split("\\s+").length
+                (zipCount, 1)   // (numZips, 1) for this city
+            })
+            .reduceByKey(_ + _)   // (numZips, numCities)
     }
 
-    def expectedOutput(spark: SparkSession): DataFrame = {
-        //return expected output of your test DF
-        import spark.implicits._ // do not delete this
+    def getTestRDD(sc: SparkContext): RDD[String] = {
+        
+        val lines = Seq(
+            "CityA\tPA\tCountyA\t1000\t\t1",                    // 0 zips (empty field)
+            "CityB\tPA\tCountyB\t2000\t16801\t2",               // 1 zip
+            "CityC\tPA\tCountyC\t3000\t16801 16802\t3",         // 2 zips
+            "CityD\tOH\tCountyD\t4000\t44101 44102\t4",         // 2 zips
+            "CityE\tOH\tCountyE\t5000\t44201 44202 44203\t5",   // 3 zips
+            "BADLINE\tonly_two_fields"                           // bad line → filtered
+        )
+        sc.parallelize(lines)
     }
- 
-    def saveit(counts: DataFrame, name: String) = {
-      counts.write.format("csv").mode("overwrite").save(name)
 
+    def expectedOutput(sc: SparkContext): RDD[(Int, Int)] = {
+       
+        sc.parallelize(Seq(
+            (0, 1),
+            (1, 1),
+            (2, 2),
+            (3, 1)
+        ))
     }
 
+    def saveit(myrdd: RDD[(Int, Int)], name: String) = {
+        myrdd.saveAsTextFile(name)
+    }
 }
-
-

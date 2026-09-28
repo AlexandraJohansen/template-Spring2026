@@ -1,3 +1,4 @@
+
 import org.apache.spark.sql.{Dataset, DataFrame, SparkSession, Row}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.expressions._
@@ -16,42 +17,29 @@ object Q2 {
     }
 
     def doOrders(customers: DataFrame, orders: DataFrame, items: DataFrame): DataFrame = {
-        val spark = customers.sparkSession
-
-        // Fill missing customer IDs with "blank" as specified
+        // Fill null customer IDs with "blank"
         val custFilled = customers.na.fill("blank", Seq("customer_id"))
         val ordFilled = orders.na.fill("blank", Seq("customer_id"))
 
-        // Register DataFrames as SQL temporary views
-        custFilled.createOrReplaceTempView("customers_view")
-        ordFilled.createOrReplaceTempView("orders_view")
-        items.createOrReplaceTempView("items_view")
+        // Calculate order totals
+        val itemTotals = items
+            .withColumn("line_total", col("quantity") * col("unit_price"))
+            .groupBy("invoice_no")
+            .agg(sum("line_total").as("order_total"))
 
-        // Compute total per order, aggregate by country
-        spark.sql("""
-            WITH order_totals AS (
-                SELECT 
-                    invoice_no, 
-                    SUM(quantity * unit_price) AS order_total
-                FROM items_view
-                GROUP BY invoice_no
-            ),
-            customer_orders AS (
-                SELECT 
-                    c.country,
-                    o.invoice_no,
-                    t.order_total
-                FROM orders_view o
-                INNER JOIN customers_view c ON o.customer_id = c.customer_id
-                INNER JOIN order_totals t ON o.invoice_no = t.invoice_no
+        // Join customers, orders, and item totals
+        val combined = ordFilled
+            .join(custFilled, Seq("customer_id"))
+            .join(itemTotals, Seq("invoice_no"))
+
+        // Aggregate by country
+        combined
+            .groupBy("country")
+            .agg(
+                countDistinct("invoice_no").as("num_orders"),
+                avg("order_total").as("avg_order_amount")
             )
-            SELECT 
-                country,
-                COUNT(DISTINCT invoice_no) AS num_orders,
-                AVG(order_total) AS avg_order_amount
-            FROM customer_orders
-            GROUP BY country
-        """)
+            .select("country", "num_orders", "avg_order_amount")
     }
 
     def getDF(spark: SparkSession): (DataFrame, DataFrame, DataFrame) = {
@@ -98,7 +86,7 @@ object Q2 {
     }
 
     def saveit(counts: DataFrame, name: String) = {
-      counts.write.format("csv").mode("overwrite").save(name)
+        counts.write.format("csv").mode("overwrite").save(name)
     }
 
 }

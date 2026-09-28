@@ -1,76 +1,82 @@
+import scala.math._
+
 case class Neumaier(sum: Double, c: Double)
 
 object HW {
 
-    // note it specifies the input (n) and its type (Int) along with the output
-    // type List[Int] ( a list of integers)
-    def q1(n: Int):List[Int] = {
-       List.tabulate(n)(i => (i+1)^2)  
-       // returns something of the correct output type in order to compile
-    }
-    def q2(n: Int):Vector[Double] = {
-       Vector.tabulate(n)(i => math.sqrt(i+1))
-    
-    }
-    // In order to get the code to compile, you have to do the same with the rest of the
-    // questions, and then fill in code to make them correct.
+  // Question 1: Returns a list containing the first n square numbers (1, 4, 9, ...)
+  def q1(n: Int): List[Int] = {
+    List.tabulate(n)(i => (i + 1) * (i + 1))
+  }
 
-    def q3(seq: Seq[Double]): Double = {
-         seq.foldLeft(0.0)(_ + _)
-    
+  // Question 2: Returns a vector containing square roots of the first n numbers (1..n)
+  def q2(n: Int): Vector[Double] = {
+    Vector.tabulate(n)(i => sqrt(i + 1))
+  }
+
+  // Question 3: Sum of items in a Seq[Double] using foldLeft
+  def q3(x: Seq[Double]): Double = {
+    x.foldLeft(0.0)(_ + _)
+  }
+
+  // Question 4: Product of items in a Seq[Double] using foldLeft
+  def q4(x: Seq[Double]): Double = {
+    x.foldLeft(1.0)(_ * _)
+  }
+
+  // Question 5: Sum of the natural logs of items using foldLeft without map
+  def q5(x: Seq[Double]): Double = {
+    x.foldLeft(0.0)((acc, elem) => acc + log(elem))
+  }
+
+  // Question 6: Sum of 1st items and sum of 2nd items using a single foldLeft
+  def q6(x: Seq[(Double, Double)]): (Double, Double) = {
+    x.foldLeft((0.0, 0.0)) { case ((sum1, sum2), (a, b)) =>
+      (sum1 + a, sum2 + b)
     }
+  }
 
-    // you fill in the rest
-     def q4(seq: Seq[Double]): Double = {
-        seq.foldLeft(1.0)(_ * _)
-        }
+  // Question 7: Sum of 1st items and MAX of 2nd items using a single foldLeft
+  def q7(x: Seq[(Double, Double)]): (Double, Double) = {
+    x.foldLeft((0.0, Double.NegativeInfinity)) { case ((sum, maxVal), (a, b)) =>
+      (sum + a, max(maxVal, b))
+    }
+  }
 
-    def q5(seq: Seq[Double]): Double = {
-      seq.foldLeft(0.0)((acc, x) => acc + math.log(x))
+  // Question 8: Sum and product of the first n positive integers -> (Int, Int)
+  def q8(n: Int): (Int, Int) = {
+    (1 to n).foldLeft((0, 1)) { case ((sum, prod), i) =>
+      (sum + i, prod * i)
+    }
+  }
+
+  // Question 9: Sum of squares of even numbers using 1 filter, 1 map, and 1 reduce
+  def q9(x: Seq[Int]): Int = {
+    val evens = x.filter(_ % 2 == 0)
+    if (evens.isEmpty) 0
+    else evens.map(i => i * i).reduce(_ + _)
+  }
+
+  // Question 10: Compute sum_{i=0}^{n-1} input(i) * (i + 1) using foldLeft
+  def q10(x: Seq[Double]): Double = {
+    val (totalSum, _) = x.foldLeft((0.0, 1.0)) { case ((accSum, idx), elem) =>
+      (accSum + elem * idx, idx + 1.0)
+    }
+    totalSum
+  }
+
+  // Question 11: Neumaier Summation algorithm using foldLeft and Neumaier case class
+  def q11(x: Seq[Double]): Double = {
+    val finalState = x.foldLeft(Neumaier(0.0, 0.0)) { (state, elem) =>
+      val t = state.sum + elem
+      val deltaC = if (abs(state.sum) >= abs(elem)) {
+        (state.sum - t) + elem
+      } else {
+        (elem - t) + state.sum
       }
-    
-    def q6(seq: Seq[(Double, Double)]): (Double, Double) = {
-        seq.foldLeft((0.0, 0.0)) {
-          case ((sum1, sum2), (x, y)) => (sum1 + x, sum2 + y)
-        }
-      
+      Neumaier(t, state.c + deltaC)
     }
-    def q7(input: Seq[(Double, Double)]): (Double, Double) = {
-  input.foldLeft((0.0, Double.NegativeInfinity)) {
-    case ((sum, maxVal), (x, y)) => (sum + x, math.max(maxVal, y))
+    finalState.sum + finalState.c
   }
-}
-    def q8(n: Int): (Int, Int) = {
-  (1 to n).foldLeft((0, 1)) {
-    case ((sum, prod), x) => (sum + x, prod * x)
-  }
-}
-    def q9(input: Seq[Int]): Int = {
-  input
-    .filter(_ % 2 == 0)
-    .map(x => x * x)
-    .foldLeft(0)(_ + _)
-}
-    def q10(input: Seq[Double]): Double = {
-  input.foldLeft((0.0, 1)) {
-    case ((sum, idx), value) => (sum + value * idx, idx + 1)
-  }._1
-}
-    def q11(input: Seq[Double]): Double = {
-  val result = input.foldLeft(Neumaier(0.0, 0.0)) {
-    case (Neumaier(sum, c), x) =>
-      val t = sum + x
-      val newC =
-        if (math.abs(sum) >= math.abs(x))
-          c + (sum - t) + x
-        else
-          c + (x - t) + sum
-
-      Neumaier(t, newC)
-  }
-
-  result.sum + result.c
-}
-
 
 }

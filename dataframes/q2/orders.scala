@@ -17,23 +17,23 @@ object Q2 {
     }
 
     def doOrders(customers: DataFrame, orders: DataFrame, items: DataFrame): DataFrame = {
-        // Fill null customer IDs with "blank"
+        // Fill null customer_id with "blank"
         val custFilled = customers.na.fill("blank", Seq("customer_id"))
         val ordFilled = orders.na.fill("blank", Seq("customer_id"))
 
-        // Calculate order totals
+        // Compute invoice item total amount
         val itemTotals = items
             .withColumn("line_total", col("quantity") * col("unit_price"))
             .groupBy("invoice_no")
             .agg(sum("line_total").as("order_total"))
 
-        // Join customers, orders, and item totals
-        val combined = ordFilled
-            .join(custFilled, Seq("customer_id"))
-            .join(itemTotals, Seq("invoice_no"))
+        // Join customer, order, and item tables
+        val fullData = ordFilled
+            .join(custFilled, Seq("customer_id"), "inner")
+            .join(itemTotals, Seq("invoice_no"), "inner")
 
-        // Aggregate by country
-        combined
+        // Group by country and calculate number of orders & average order spending
+        fullData
             .groupBy("country")
             .agg(
                 countDistinct("invoice_no").as("num_orders"),
@@ -86,7 +86,7 @@ object Q2 {
     }
 
     def saveit(counts: DataFrame, name: String) = {
-        counts.write.format("csv").mode("overwrite").save(name)
+      counts.write.format("csv").mode("overwrite").save(name)
     }
 
 }

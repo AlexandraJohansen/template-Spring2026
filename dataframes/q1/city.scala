@@ -1,3 +1,4 @@
+
 import org.apache.spark.sql.{Dataset, DataFrame, SparkSession, Row}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.expressions._
@@ -25,30 +26,31 @@ object Q1 {
     }
 
     def doCity(input: DataFrame): DataFrame = {
-        // Filter out bad rows / nulls strictly for required processing columns
+        // Filter nulls for strictly necessary columns
         val valid = input.filter(
             col("state").isNotNull && 
             col("county").isNotNull && 
             col("population").isNotNull
         )
 
-        // Identify small cities (1 or fewer zips) using registered UDF
-        val enriched = valid.withColumn(
+        // Count zips using the registered UDF
+        // Small city definition: zipCounter(zips) <= 1
+        val withSmall = valid.withColumn(
             "is_small",
-            expr("case when zipCounter(zips) <= 1 then 1 else 0 end")
+            expr("int(zipCounter(zips) <= 1)")
         )
 
-        // Aggregate by State and County first
-        val countyStats = enriched
+        // Stage 1: Group by state and county to count small cities per county
+        val countyStats = withSmall
             .groupBy("state", "county")
             .agg(
                 count("*").as("county_cities"),
                 sum("population").as("county_pop"),
                 sum("is_small").as("small_cities")
             )
-            .withColumn("is_le_2_small", expr("case when small_cities <= 2 then 1 else 0 end"))
+            .withColumn("is_le_2_small", expr("int(small_cities <= 2)"))
 
-        // Aggregate by State to reach final output schema
+        // Stage 2: Aggregate by state
         countyStats
             .groupBy("state")
             .agg(

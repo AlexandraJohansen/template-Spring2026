@@ -1,0 +1,6 @@
+
+python3 cities.py \
+    -r hadoop \
+    --output-dir=spadoopframes_mr \
+    --no-output \
+    /datasets/cities

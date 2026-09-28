@@ -1,0 +1,6 @@
+CityA	PA	CountyA	1000		1
+CityB	PA	CountyB	2000	16801	2
+CityC	PA	CountyC	3000	16801 16802	3
+CityD	OH	CountyD	4000	44101 44102	4
+CityE	OH	CountyE	5000	44201 44202 44203	5
+BADLINE	only_two_fields

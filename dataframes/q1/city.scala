@@ -25,34 +25,34 @@ object Q1 {
     }
 
     def doCity(input: DataFrame): DataFrame = {
-        // Filter nulls strictly for required columns
+        // Filter out nulls for critical columns
         val valid = input.filter(
             col("state").isNotNull && 
             col("county").isNotNull && 
             col("population").isNotNull
         )
 
-        // Annotate small cities (<= 1 zip code) using UDF
-        val enriched = valid.withColumn(
+        // Count zips using registered UDF (small city: zipCounter(zips) <= 1)
+        val withSmallFlag = valid.withColumn(
             "is_small",
-            expr("zipCounter(zips) <= 1").cast("int")
+            expr("case when zipCounter(zips) <= 1 then 1 else 0 end")
         )
 
-        // Group by State and County first to compute small city count per county
-        val countyStats = enriched
+        // Stage 1: Group by State and County (uniquely identifies county)
+        val countyAgg = withSmallFlag
             .groupBy("state", "county")
             .agg(
-                count("*").as("county_city_count"),
+                count("*").as("county_cities"),
                 sum("population").as("county_pop"),
-                sum("is_small").as("small_city_count")
+                sum("is_small").as("small_cities")
             )
-            .withColumn("is_le_2_small", expr("int(small_city_count <= 2)"))
+            .withColumn("is_le_2_small", expr("case when small_cities <= 2 then 1 else 0 end"))
 
-        // Aggregate by State to reach target schema
-        countyStats
+        // Stage 2: Aggregate by State to calculate total stats and count of qualifying counties
+        countyAgg
             .groupBy("state")
             .agg(
-                sum("county_city_count").as("num_cities"),
+                sum("county_cities").as("num_cities"),
                 sum("county_pop").as("total_population"),
                 sum("is_le_2_small").as("num_counties_le_2_small")
             )

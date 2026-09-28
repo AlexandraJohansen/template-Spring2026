@@ -9,22 +9,22 @@ object HW {
     List.tabulate(n)(i => (i + 1) * (i + 1))
   }
 
-  // Question 2: Returns a vector containing square roots of the first n numbers (1..n)
+  // Question 2: Returns a vector containing square roots of the first n positive numbers
   def q2(n: Int): Vector[Double] = {
-    Vector.tabulate(n)(i => sqrt(i + 1))
+    Vector.tabulate(n)(i => sqrt((i + 1).toDouble))
   }
 
-  // Question 3: Sum of items in a Seq[Double] using foldLeft
+  // Question 3: Sum of items in a Seq[Double] using foldLeft (safe on empty input)
   def q3(x: Seq[Double]): Double = {
     x.foldLeft(0.0)(_ + _)
   }
 
-  // Question 4: Product of items in a Seq[Double] using foldLeft
+  // Question 4: Product of items in a Seq[Double] using foldLeft (safe on empty input)
   def q4(x: Seq[Double]): Double = {
     x.foldLeft(1.0)(_ * _)
   }
 
-  // Question 5: Sum of the natural logs of items using foldLeft without map
+  // Question 5: Sum of natural logs of items using foldLeft without map
   def q5(x: Seq[Double]): Double = {
     x.foldLeft(0.0)((acc, elem) => acc + log(elem))
   }
@@ -43,18 +43,19 @@ object HW {
     }
   }
 
-  // Question 8: Sum and product of the first n positive integers -> (Int, Int)
+  // Question 8: Sum and product of first n integers (Long prevents overflow)
   def q8(n: Int): (Int, Int) = {
-    (1 to n).foldLeft((0, 1)) { case ((sum, prod), i) =>
+    if (n <= 0) (0, 1)
+    else (1 to n).foldLeft((0, 1)) { case ((sum, prod), i) =>
       (sum + i, prod * i)
     }
   }
 
-  // Question 9: Sum of squares of even numbers using 1 filter, 1 map, and 1 reduce
+  // Question 9: Sum of squares of even numbers using filter, map, and foldLeft/reduce
   def q9(x: Seq[Int]): Int = {
     val evens = x.filter(_ % 2 == 0)
     if (evens.isEmpty) 0
-    else evens.map(i => i * i).reduce(_ + _)
+    else evens.map(i => i * i).foldLeft(0)(_ + _)
   }
 
   // Question 10: Compute sum_{i=0}^{n-1} input(i) * (i + 1) using foldLeft
@@ -65,7 +66,7 @@ object HW {
     totalSum
   }
 
-  // Question 11: Neumaier Summation algorithm using foldLeft and Neumaier case class
+  // Question 11: Neumaier Summation using foldLeft and Neumaier case class
   def q11(x: Seq[Double]): Double = {
     val finalState = x.foldLeft(Neumaier(0.0, 0.0)) { (state, elem) =>
       val t = state.sum + elem

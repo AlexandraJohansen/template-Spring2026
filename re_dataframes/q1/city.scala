@@ -24,17 +24,15 @@ object Q1 {
     }
  
     def doCity(input: DataFrame): DataFrame = {
-        // Step 1: filter nulls only on columns we need: state, county, population, zip
+        // Filter nulls only on columns we need: state, county, population
+        // zip can stay null — zipCounter handles None → 0
         val clean = input.filter(
             col("state").isNotNull &&
             col("county").isNotNull &&
             col("population").isNotNull
-            // zip can be null — zipCounter handles None → 0
         )
  
-        // Step 2: per city, determine if it is small (zipCounter <= 1)
-        // A county is uniquely identified by (state, county)
-        // isSmall is 1 if small city, 0 otherwise — use int() casting in SQL expr
+        // Per city: add isSmall flag (1 if zipCounter <= 1, else 0)
         val withSmall = clean.selectExpr(
             "name",
             "state",
@@ -43,40 +41,40 @@ object Q1 {
             "int(zipCounter(zip) <= 1) as isSmall"
         )
  
-        // Step 3: aggregate per (state, county) to count small cities in that county
+        // Group by (state, county) to get smallCount per county,
+        // then flag the county (1 if smallCount <= 2),
+        // then group by state to sum: numCities, totalPop, fewSmallCounties
+        //
+        // We do this in two groupBy steps — NO joins allowed.
+        //
+        // Step 1: group by (state, county)
+        //   - count cities in that county
+        //   - sum population in that county
+        //   - sum isSmall to get smallCount per county
         val perCounty = withSmall
             .groupBy("state", "county")
-            .agg(sum("isSmall").alias("smallCount"))
- 
-        // Step 4: flag each county as having 2 or fewer small cities
-        // int(smallCount <= 2) → 1 if county qualifies, 0 otherwise
-        val countyFlagged = perCounty.selectExpr(
-            "state",
-            "county",
-            "int(smallCount <= 2) as fewSmall"
-        )
- 
-        // Step 5: aggregate per state:
-        //   - number of cities (from clean, before county grouping)
-        //   - total population
-        //   - number of counties with fewSmall = 1
-        val cityStats = clean
-            .groupBy("state")
             .agg(
-                count("name").alias("numCities"),
-                sum("population").alias("totalPop")
+                count("name").alias("countyNumCities"),
+                sum("population").alias("countyPop"),
+                sum("isSmall").alias("smallCount")
+            )
+            // Flag: 1 if this county has <= 2 small cities
+            .selectExpr(
+                "state",
+                "county",
+                "countyNumCities",
+                "countyPop",
+                "int(smallCount <= 2) as fewSmall"
             )
  
-        val countyStats = countyFlagged
+        // Step 2: group by state — sum up city counts, population, qualifying counties
+        perCounty
             .groupBy("state")
-            .agg(sum("fewSmall").alias("fewSmallCounties"))
- 
-        // Step 6: join city stats and county stats on state
-        // Use withColumnRenamed to avoid ambiguous column names
-        cityStats
-            .join(countyStats.withColumnRenamed("state", "state2"),
-                  col("state") === col("state2"))
-            .select("state", "numCities", "totalPop", "fewSmallCounties")
+            .agg(
+                sum("countyNumCities").alias("numCities"),
+                sum("countyPop").alias("totalPop"),
+                sum("fewSmall").alias("fewSmallCounties")
+            )
     }
  
     def getDF(spark: SparkSession): DataFrame = {
@@ -116,30 +114,28 @@ object Q1 {
             StructField("id",         IntegerType, nullable = true)
         ))
  
-        // PA / CountyA: CityA (0 zips=small), CityB (1 zip=small), CityC (2 zips=not small)
-        //   → 3 cities, pop=6000, CountyA has 2 small cities (≤2 → qualifies)
-        // PA / CountyB: CityD (0 zips=small), CityE (0 zips=small), CityF (0 zips=small)
-        //   → 3 cities, pop=9000, CountyB has 3 small cities (>2 → does not qualify)
-        // PA total: 6 cities, pop=15000, 1 county with ≤2 small cities (CountyA only)
+        // PA / CountyA: CityA(0 zips=small), CityB(1 zip=small), CityC(2 zips=not small)
+        //   smallCount=2 → fewSmall=1 (qualifies, ≤2)
+        // PA / CountyB: CityD(0=small), CityE(0=small), CityF(0=small)
+        //   smallCount=3 → fewSmall=0 (does not qualify)
+        // PA total: 6 cities, pop=15000, 1 qualifying county
         //
-        // OH / CountyC: CityG (1 zip=small)
-        //   → 1 city, pop=7000, CountyC has 1 small city (≤2 → qualifies)
-        // OH total: 1 city, pop=7000, 1 county with ≤2 small cities
+        // OH / CountyC: CityG(1 zip=small)
+        //   smallCount=1 → fewSmall=1 (qualifies)
+        // OH total: 1 city, pop=7000, 1 qualifying county
         val rows = Seq(
-            Row("CityA", "PA", "CountyA", 1000, "",              1),
-            Row("CityB", "PA", "CountyA", 2000, "16801",         2),
-            Row("CityC", "PA", "CountyA", 3000, "16801 16802",   3),
-            Row("CityD", "PA", "CountyB", 1000, "",              4),
-            Row("CityE", "PA", "CountyB", 4000, "",              5),
-            Row("CityF", "PA", "CountyB", 4000, "",              6),
-            Row("CityG", "OH", "CountyC", 7000, "44101",         7),
-            Row("BAD",   null,  null,     null,  null,           -1)
+            Row("CityA", "PA", "CountyA", 1000, "",            1),
+            Row("CityB", "PA", "CountyA", 2000, "16801",       2),
+            Row("CityC", "PA", "CountyA", 3000, "16801 16802", 3),
+            Row("CityD", "PA", "CountyB", 1000, "",            4),
+            Row("CityE", "PA", "CountyB", 4000, "",            5),
+            Row("CityF", "PA", "CountyB", 4000, "",            6),
+            Row("CityG", "OH", "CountyC", 7000, "44101",       7),
+            Row("BAD",   null,  null,     null,  null,         -1)
         )
  
         spark.createDataFrame(
-            spark.sparkContext.parallelize(rows),
-            schema
-        )
+            spark.sparkContext.parallelize(rows), schema)
     }
  
     def expectedOutput(spark: SparkSession): DataFrame = {
@@ -147,7 +143,7 @@ object Q1 {
  
         val schema = StructType(Array(
             StructField("state",            StringType, nullable = true),
-            StructField("numCities",        LongType,   nullable = false),
+            StructField("numCities",        LongType,   nullable = true),
             StructField("totalPop",         LongType,   nullable = true),
             StructField("fewSmallCounties", LongType,   nullable = true)
         ))
@@ -158,13 +154,10 @@ object Q1 {
         )
  
         spark.createDataFrame(
-            spark.sparkContext.parallelize(rows),
-            schema
-        )
+            spark.sparkContext.parallelize(rows), schema)
     }
  
     def saveit(counts: DataFrame, name: String) = {
         counts.write.format("csv").mode("overwrite").save(name)
     }
 }
- 

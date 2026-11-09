@@ -1,95 +1,66 @@
-import org.apache.spark.sql.{Dataset, DataFrame, SparkSession, Row}
-import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.expressions._
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types._
-import org.apache.spark.sql.functions.udf
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
+import org.apache.spark.rdd.RDD
+import org.apache.spark.SparkContext._
 
-object Q3 {
+object Q2 {
 
     def main(args: Array[String]) = {
-        val spark = getSparkSession()
-        import spark.implicits._
-        val mydf = getDF(spark)
-        val answer = doCity(mydf)
-        saveit(answer, "everything_q3")
+        val sc = getSC()
+        val myrdd = getRDD(sc)
+        val counts = doCity(myrdd)
+        saveit(counts, "everything_q2")
     }
 
-    def registerZipCounter(spark: SparkSession) = {
-        val zipCounter = udf({x: String => Option(x) match {
-                                 case Some(y) => (y.trim()+" ").split("\\s+").size;
-                                 case None => 0}
-                             })
-        spark.udf.register("zipCounter", zipCounter)
+    def getSC(): SparkContext = {
+        val conf = new SparkConf().setAppName("Q2Cities")
+        new SparkContext(conf)
     }
 
-    def doCity(input: DataFrame): DataFrame = {
-        // zip must NOT be filtered: an empty zip field is read as null and means 0 zips
-        // (zipCounter already maps null to 0).
-        // Bad lines are detected through the id column (null when the line is malformed).
+    def getRDD(sc: SparkContext): RDD[String] = {
+        sc.textFile("/datasets/cities")
+    }
+
+    def doCity(input: RDD[String]): RDD[(Int, Int)] = {
+        // fields: name, state, county, population, zips, id
+        // a good line has all 6 fields and a numeric id; empty zips field means 0 zips
         input
-            .filter(col("id").isNotNull)
-            .selectExpr("zipCounter(zip) as numZips")
-            .groupBy("numZips")
-            .count()
+            .map(line => line.split("\t", -1))
+            .filter(fields => fields.length == 6 &&
+                              fields(5).trim.nonEmpty &&
+                              fields(5).trim.forall(c => c.isDigit))
+            .map(fields => {
+                val zips = fields(4).trim
+                val zipCount = if (zips.isEmpty) 0 else zips.split("\\s+").length
+                (zipCount, 1)
+            })
+            .reduceByKey(_ + _)
     }
 
-    def getSparkSession(): SparkSession = {
-        val spark = SparkSession.builder().getOrCreate()
-        registerZipCounter(spark)
-        spark
+    def getTestRDD(sc: SparkContext): RDD[String] = {
+        val lines = Seq(
+            "CityA\tPA\tCountyA\t1000\t\t1",
+            "CityB\tPA\tCountyB\t2000\t16801\t2",
+            "CityC\tPA\tCountyC\t3000\t16801 16802\t3",
+            "CityD\tOH\tCountyD\t4000\t44101 44102\t4",
+            "CityE\tOH\tCountyE\t5000\t44201 44202 44203\t5",
+            "CityF\tOH\tCountyF\t6000\t\t6",
+            "BADLINE\tonly_two_fields",
+            "BAD2\tPA\tCountyZ\t10\t16801"
+        )
+        sc.parallelize(lines)
     }
 
-    def getDF(spark: SparkSession): DataFrame = {
-        val schema = StructType(Array(
-            StructField("name",       StringType,  nullable = true),
-            StructField("state",      StringType,  nullable = true),
-            StructField("county",     StringType,  nullable = true),
-            StructField("population", IntegerType, nullable = true),
-            StructField("zip",        StringType,  nullable = true),
-            StructField("id",         IntegerType, nullable = true)
+    def expectedOutput(sc: SparkContext): RDD[(Int, Int)] = {
+        sc.parallelize(Seq(
+            (0, 2),
+            (1, 1),
+            (2, 2),
+            (3, 1)
         ))
-
-        spark.read
-            .format("csv")
-            .option("sep", "\t")
-            .option("header", "false")
-            .schema(schema)
-            .load("/datasets/cities")
     }
 
-    def getTestDF(spark: SparkSession): DataFrame = {
-        import spark.implicits._
-
-        Seq(
-            ("CityA", "PA", "CountyA", 1000, "",                  1),   // 0 zips (empty)
-            ("CityB", "PA", "CountyB", 2000, "16801",             2),   // 1 zip
-            ("CityC", "PA", "CountyC", 3000, "16801 16802",       3),   // 2 zips
-            ("CityD", "OH", "CountyD", 4000, "44101 44102",       4),   // 2 zips
-            ("CityE", "OH", "CountyE", 5000, "44201 44202 44203", 5)    // 3 zips
-        ).toDF("name", "state", "county", "population", "zip", "id")
-         .union(
-            // CityF has a null zip (what the csv reader produces for an empty field): 0 zips
-            // BAD has a zip but a null id: a bad line, must be dropped
-            Seq(
-                ("CityF", "OH", "CountyF", 6000, null.asInstanceOf[String], 6),
-                ("BAD",   "PA", "CountyZ", 10,   "16801",                   null.asInstanceOf[Integer])
-            ).toDF("name", "state", "county", "population", "zip", "id")
-         )
-    }
-
-    def expectedOutput(spark: SparkSession): DataFrame = {
-        import spark.implicits._
-        // 0 zips: CityA, CityF   1 zip: CityB   2 zips: CityC, CityD   3 zips: CityE
-        Seq(
-            (0, 2L),
-            (1, 1L),
-            (2, 2L),
-            (3, 1L)
-        ).toDF("numZips", "numCities")
-    }
-
-    def saveit(counts: DataFrame, name: String) = {
-        counts.write.format("csv").mode("overwrite").save(name)
+    def saveit(myrdd: RDD[(Int, Int)], name: String) = {
+        myrdd.saveAsTextFile(name)
     }
 }

@@ -13,7 +13,7 @@ object Q2 {
     }
 
     def getSC(): SparkContext = {
-        val conf = new SparkConf().setAppName("Q2Cities").setIfMissing("spark.master", "local[*]")
+        val conf = new SparkConf().setAppName("Q2Cities")
         new SparkContext(conf)
     }
 
@@ -22,36 +22,38 @@ object Q2 {
     }
 
     def doCity(input: RDD[String]): RDD[(Int, Int)] = {
-    
+        // fields: name, state, county, population, zips, id
+        // a good line has all 6 fields and a numeric id; empty zips field means 0 zips
         input
             .map(line => line.split("\t", -1))
-            .filter(fields => fields.length >= 5 && fields(0).trim.nonEmpty)
+            .filter(fields => fields.length == 6 &&
+                              fields(5).trim.nonEmpty &&
+                              fields(5).trim.forall(c => c.isDigit))
             .map(fields => {
-                val zipField = fields(4).trim
-                // Empty zip field → 0 zips; otherwise count whitespace-separated tokens
-                val zipCount = if (zipField.isEmpty) 0 else zipField.split("\\s+").length
-                (zipCount, 1)   // (numZips, 1) for this city
+                val zips = fields(4).trim
+                val zipCount = if (zips.isEmpty) 0 else zips.split("\\s+").length
+                (zipCount, 1)
             })
-            .reduceByKey(_ + _)   // (numZips, numCities)
+            .reduceByKey(_ + _)
     }
 
     def getTestRDD(sc: SparkContext): RDD[String] = {
-        
         val lines = Seq(
-            "CityA\tPA\tCountyA\t1000\t\t1",                    // 0 zips (empty field)
-            "CityB\tPA\tCountyB\t2000\t16801\t2",               // 1 zip
-            "CityC\tPA\tCountyC\t3000\t16801 16802\t3",         // 2 zips
-            "CityD\tOH\tCountyD\t4000\t44101 44102\t4",         // 2 zips
-            "CityE\tOH\tCountyE\t5000\t44201 44202 44203\t5",   // 3 zips
-            "BADLINE\tonly_two_fields"                           // bad line → filtered
+            "CityA\tPA\tCountyA\t1000\t\t1",
+            "CityB\tPA\tCountyB\t2000\t16801\t2",
+            "CityC\tPA\tCountyC\t3000\t16801 16802\t3",
+            "CityD\tOH\tCountyD\t4000\t44101 44102\t4",
+            "CityE\tOH\tCountyE\t5000\t44201 44202 44203\t5",
+            "CityF\tOH\tCountyF\t6000\t\t6",
+            "BADLINE\tonly_two_fields",
+            "BAD2\tPA\tCountyZ\t10\t16801"
         )
         sc.parallelize(lines)
     }
 
     def expectedOutput(sc: SparkContext): RDD[(Int, Int)] = {
-       
         sc.parallelize(Seq(
-            (0, 1),
+            (0, 2),
             (1, 1),
             (2, 2),
             (3, 1)

@@ -1,4 +1,4 @@
-
+hadoop fs -rm -r -f spadoopframes_mr
 python3 cities.py \
     -r hadoop \
     --output-dir=spadoopframes_mr \

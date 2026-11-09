@@ -16,31 +16,22 @@ object Q3 {
     }
 
     def registerZipCounter(spark: SparkSession) = {
-      
         val zipCounter = udf({x: String => Option(x) match {
                                  case Some(y) => (y.trim()+" ").split("\\s+").size;
                                  case None => 0}
                              })
         spark.udf.register("zipCounter", zipCounter)
-
-     
-        val zipCounterFixed = udf({x: String => Option(x) match {
-                                 case Some(y) if y.trim().isEmpty => 0
-                                 case Some(y) => y.trim().split("\\s+").length
-                                 case None    => 0}
-                             })
-        spark.udf.register("zipCounterFixed", zipCounterFixed)
     }
 
     def doCity(input: DataFrame): DataFrame = {
-       
+        // zip must NOT be filtered: an empty zip field is read as null and means 0 zips
+        // (zipCounter already maps null to 0).
+        // Bad lines are detected through the id column (null when the line is malformed).
         input
-            .filter(col("zip").isNotNull)
-            .select(callUDF("zipCounterFixed", col("zip")).alias("numZips"))
+            .filter(col("id").isNotNull)
+            .selectExpr("zipCounter(zip) as numZips")
             .groupBy("numZips")
             .count()
-            .withColumnRenamed("count", "numCities")
-            .orderBy("numZips")
     }
 
     def getSparkSession(): SparkSession = {
@@ -50,7 +41,6 @@ object Q3 {
     }
 
     def getDF(spark: SparkSession): DataFrame = {
-        
         val schema = StructType(Array(
             StructField("name",       StringType,  nullable = true),
             StructField("state",      StringType,  nullable = true),
@@ -62,9 +52,8 @@ object Q3 {
 
         spark.read
             .format("csv")
-            .option("sep", "\t")           
-            .option("header", "false")     
-            .option("mode", "PERMISSIVE")  
+            .option("sep", "\t")
+            .option("header", "false")
             .schema(schema)
             .load("/datasets/cities")
     }
@@ -72,49 +61,32 @@ object Q3 {
     def getTestDF(spark: SparkSession): DataFrame = {
         import spark.implicits._
 
-        val schema = StructType(Array(
-            StructField("name",       StringType,  nullable = true),
-            StructField("state",      StringType,  nullable = true),
-            StructField("county",     StringType,  nullable = true),
-            StructField("population", IntegerType, nullable = true),
-            StructField("zip",        StringType,  nullable = true),
-            StructField("id",         IntegerType, nullable = true)
-        ))
-
-        val rows = Seq(
-            Row("CityA", "PA", "CountyA", 1000,  "",                   1),  
-            Row("CityB", "PA", "CountyB", 2000,  "16801",              2),  
-            Row("CityC", "PA", "CountyC", 3000,  "16801 16802",        3),  
-            Row("CityD", "OH", "CountyD", 4000,  "44101 44102",        4), 
-            Row("CityE", "OH", "CountyE", 5000,  "44201 44202 44203",  5),  
-            Row("BAD",   null,  null,     null,   null,                -1)   
-        )
-
-        spark.createDataFrame(
-            spark.sparkContext.parallelize(rows),
-            schema
-        )
+        Seq(
+            ("CityA", "PA", "CountyA", 1000, "",                  1),   // 0 zips (empty)
+            ("CityB", "PA", "CountyB", 2000, "16801",             2),   // 1 zip
+            ("CityC", "PA", "CountyC", 3000, "16801 16802",       3),   // 2 zips
+            ("CityD", "OH", "CountyD", 4000, "44101 44102",       4),   // 2 zips
+            ("CityE", "OH", "CountyE", 5000, "44201 44202 44203", 5)    // 3 zips
+        ).toDF("name", "state", "county", "population", "zip", "id")
+         .union(
+            // CityF has a null zip (what the csv reader produces for an empty field): 0 zips
+            // BAD has a zip but a null id: a bad line, must be dropped
+            Seq(
+                ("CityF", "OH", "CountyF", 6000, null.asInstanceOf[String], 6),
+                ("BAD",   "PA", "CountyZ", 10,   "16801",                   null.asInstanceOf[Integer])
+            ).toDF("name", "state", "county", "population", "zip", "id")
+         )
     }
 
     def expectedOutput(spark: SparkSession): DataFrame = {
         import spark.implicits._
-
-        val schema = StructType(Array(
-            StructField("numZips",   IntegerType, nullable = false),
-            StructField("numCities", LongType,    nullable = false)
-        ))
-
-        val rows = Seq(
-            Row(0, 1L),
-            Row(1, 1L),
-            Row(2, 2L),
-            Row(3, 1L)
-        )
-
-        spark.createDataFrame(
-            spark.sparkContext.parallelize(rows),
-            schema
-        ).orderBy("numZips")
+        // 0 zips: CityA, CityF   1 zip: CityB   2 zips: CityC, CityD   3 zips: CityE
+        Seq(
+            (0, 2L),
+            (1, 1L),
+            (2, 2L),
+            (3, 1L)
+        ).toDF("numZips", "numCities")
     }
 
     def saveit(counts: DataFrame, name: String) = {

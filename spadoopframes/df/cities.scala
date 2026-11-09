@@ -24,7 +24,9 @@ object Q3 {
     }
 
     def doCity(input: DataFrame): DataFrame = {
-     
+        // zip must NOT be filtered: an empty zip field is read as null and means 0 zips
+        // (zipCounter already maps null to 0).
+        // Bad lines are detected through the id column (null when the line is malformed).
         input
             .filter(col("id").isNotNull)
             .selectExpr("zipCounter(zip) as numZips")
@@ -59,25 +61,21 @@ object Q3 {
     def getTestDF(spark: SparkSession): DataFrame = {
         import spark.implicits._
 
-        Seq(
-            ("CityA", "PA", "CountyA", 1000, "",                  1),   // 0 zips (empty)
-            ("CityB", "PA", "CountyB", 2000, "16801",             2),   // 1 zip
-            ("CityC", "PA", "CountyC", 3000, "16801 16802",       3),   // 2 zips
-            ("CityD", "OH", "CountyD", 4000, "44101 44102",       4),   // 2 zips
-            ("CityE", "OH", "CountyE", 5000, "44201 44202 44203", 5)    // 3 zips
+        // None becomes null in the dataframe
+        Seq[(String, String, String, Int, Option[String], Option[Int])](
+            ("CityA", "PA", "CountyA", 1000, Some(""),                   Some(1)),  // 0 zips (empty)
+            ("CityB", "PA", "CountyB", 2000, Some("16801"),              Some(2)),  // 1 zip
+            ("CityC", "PA", "CountyC", 3000, Some("16801 16802"),        Some(3)),  // 2 zips
+            ("CityD", "OH", "CountyD", 4000, Some("44101 44102"),        Some(4)),  // 2 zips
+            ("CityE", "OH", "CountyE", 5000, Some("44201 44202 44203"),  Some(5)),  // 3 zips
+            ("CityF", "OH", "CountyF", 6000, None,                       Some(6)),  // null zip = 0 zips
+            ("BAD",   "PA", "CountyZ", 10,   Some("16801"),              None)      // null id: bad line, dropped
         ).toDF("name", "state", "county", "population", "zip", "id")
-         .union(
-       
-            Seq(
-                ("CityF", "OH", "CountyF", 6000, null.asInstanceOf[String], 6),
-                ("BAD",   "PA", "CountyZ", 10,   "16801",                   null.asInstanceOf[Integer])
-            ).toDF("name", "state", "county", "population", "zip", "id")
-         )
     }
 
     def expectedOutput(spark: SparkSession): DataFrame = {
         import spark.implicits._
-     
+        // 0 zips: CityA, CityF   1 zip: CityB   2 zips: CityC, CityD   3 zips: CityE
         Seq(
             (0, 2L),
             (1, 1L),

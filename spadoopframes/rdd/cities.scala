@@ -21,14 +21,19 @@ object Q2 {
         sc.textFile("/datasets/cities")
     }
 
+    def isIntOrEmpty(x: String): Boolean = {
+        x.isEmpty || x.matches("-?[0-9]+")
+    }
+
     def doCity(input: RDD[String]): RDD[(Int, Int)] = {
         // fields: name, state, county, population, zips, id
-        // a good line has all 6 fields and a numeric id; empty zips field means 0 zips
+        // a bad line has the wrong number of fields or a non-numeric population/id
+        // (an empty population/id is fine, an empty zips field means 0 zips)
         input
             .map(line => line.split("\t", -1))
             .filter(fields => fields.length == 6 &&
-                              fields(5).trim.nonEmpty &&
-                              fields(5).trim.forall(c => c.isDigit))
+                              isIntOrEmpty(fields(3).trim) &&
+                              isIntOrEmpty(fields(5).trim))
             .map(fields => {
                 val zips = fields(4).trim
                 val zipCount = if (zips.isEmpty) 0 else zips.split("\\s+").length
@@ -44,9 +49,10 @@ object Q2 {
             "CityC\tPA\tCountyC\t3000\t16801 16802\t3",
             "CityD\tOH\tCountyD\t4000\t44101 44102\t4",
             "CityE\tOH\tCountyE\t5000\t44201 44202 44203\t5",
-            "CityF\tOH\tCountyF\t6000\t\t6",
+            "CityF\tOH\tCountyF\t\t\t6",
             "BADLINE\tonly_two_fields",
-            "BAD2\tPA\tCountyZ\t10\t16801"
+            "BAD2\tPA\tCountyZ\t10\t16801",
+            "BAD3\tPA\tCountyZ\tabc\t16801\t9"
         )
         sc.parallelize(lines)
     }

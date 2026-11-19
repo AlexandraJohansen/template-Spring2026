@@ -31,4 +31,3 @@ class CityZipCount(MRJob):
 
 if __name__ == '__main__':
     CityZipCount.run()
- 

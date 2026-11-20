@@ -25,17 +25,25 @@ object Q2 {
         x.isEmpty || x.matches("-?[0-9]+")
     }
 
+    def isGoodLine(fields: Array[String]): Boolean = {
+        // well formed: 6 fields, numeric (or empty) population and id
+        val wellFormed = fields.length == 6 &&
+                         isIntOrEmpty(fields(3).trim) &&
+                         isIntOrEmpty(fields(5).trim)
+        // a city with no zips is also fine as long as it has a name, state and county
+        val noZips = fields.length >= 3 &&
+                     (fields.length < 5 || fields(4).trim.isEmpty) &&
+                     fields(0).trim.nonEmpty && fields(1).trim.nonEmpty && fields(2).trim.nonEmpty
+        wellFormed || noZips
+    }
+
     def doCity(input: RDD[String]): RDD[(Int, Int)] = {
         // fields: name, state, county, population, zips, id
-        // a bad line has the wrong number of fields or a non-numeric population/id
-        // (an empty population/id is fine, an empty zips field means 0 zips)
         input
             .map(line => line.split("\t", -1))
-            .filter(fields => fields.length == 6 &&
-                              isIntOrEmpty(fields(3).trim) &&
-                              isIntOrEmpty(fields(5).trim))
+            .filter(fields => isGoodLine(fields))
             .map(fields => {
-                val zips = fields(4).trim
+                val zips = if (fields.length < 5) "" else fields(4).trim
                 val zipCount = if (zips.isEmpty) 0 else zips.split("\\s+").length
                 (zipCount, 1)
             })

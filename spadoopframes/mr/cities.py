@@ -5,17 +5,20 @@ class CityZipCount(MRJob):
     def mapper(self, _, line):
         # fields: name, state, county, population, zips, id
         fields = line.rstrip('\n').split('\t')
-        # bad lines: wrong number of fields or non-numeric population/id
-        # (an empty population or id is allowed)
-        if len(fields) != 6:
+        n = len(fields)
+        # well formed: 6 fields, numeric (or empty) population and id
+        well_formed = False
+        if n == 6:
+            pop = fields[3].strip()
+            cid = fields[5].strip()
+            well_formed = ((pop == '' or pop.lstrip('-').isdigit()) and
+                           (cid == '' or cid.lstrip('-').isdigit()))
+        # a city with no zips is also fine as long as it has a name, state and county
+        no_zips = (n >= 3 and (n < 5 or fields[4].strip() == '') and
+                   fields[0].strip() != '' and fields[1].strip() != '' and fields[2].strip() != '')
+        if not (well_formed or no_zips):
             return
-        pop = fields[3].strip()
-        cid = fields[5].strip()
-        if pop != '' and not pop.lstrip('-').isdigit():
-            return
-        if cid != '' and not cid.lstrip('-').isdigit():
-            return
-        zips = fields[4].strip()
+        zips = fields[4].strip() if n >= 5 else ''
         if zips == '':
             zip_count = 0
         else:
